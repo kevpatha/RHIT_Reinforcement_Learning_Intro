@@ -294,13 +294,33 @@ class RosieMomentumEnv:
         canvas = tk.Canvas(root, width=width, height=height, bg="white")
         canvas.pack()
 
+        btn_frame = tk.Frame(root)
+        btn_frame.pack(fill=tk.X)
+        reset_btn = tk.Button(btn_frame, text="Reset (R)", font=("Arial", 12), bg="#800000", fg="white")
+        reset_btn.pack(pady=4)
+
         self.current_action = 0
         self.last_accel_action = 0
         self.reset()
         self.gui_done = False
         self.gui_steps = 0
 
+        def do_reset():
+            was_done = self.gui_done
+            self.current_action = 0
+            self.last_accel_action = 0
+            self.reset()
+            self.gui_done = False
+            self.gui_steps = 0
+            if was_done:
+                root.after(int(self.dt * 1000), update)
+
+        reset_btn.config(command=do_reset)
+
         def key_pressed(event):
+            if event.keysym in ('r', 'R'):
+                do_reset()
+                return
             if policy_fn: return
             if event.keysym == 'Up': self.current_action = 1; self.last_accel_action = 1
             elif event.keysym == 'Down': self.current_action = 2; self.last_accel_action = 2
@@ -410,7 +430,10 @@ class RosieMomentumEnv:
                     _, fin_rew = self._is_terminal(self.state[:2], wm)
                     msg = "Goal Reached!" if fin_rew > 0 else "Mission Failed!"
                     canvas.create_text(width/2, height/2, text=msg, font=("Arial", 24, "bold"), fill="#800000")
-                else: root.after(int(self.dt*1000), update)
+                    canvas.create_text(width/2, height/2 + 36, text="Press R or click Reset to play again",
+                                       font=("Arial", 13), fill="#800000")
+                else:
+                    root.after(int(self.dt*1000), update)
         update()
         root.mainloop()
 

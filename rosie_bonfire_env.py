@@ -312,115 +312,112 @@ class RosieGridEnv:
         """
         Launches a simple GUI using tkinter to visualize the environment.
         If q_table is provided, it runs an episode using greedy actions from the table.
-        Otherwise, allows the user to control the agent with arrow keys or 'n' for none.
+        Otherwise, allows the user to control the agent with arrow keys.
+        Press R or click Reset to start a new episode at any time.
         """
         root = tk.Tk()
         root.title("RHIT GridWorld RL Environment")
-        
+
         # RHIT Colors
         rose_red = "#800000"
         white = "#FFFFFF"
         black = "#000000"
-        orange = "#FFA500" # For bonfire flames
-        brown = "#8B4513"  # For bonfire logs
-        gray = "#808080"   # For elephant body
-        
+        orange = "#FFA500"
+        brown = "#8B4513"
+        gray = "#808080"
+
         cell_size = 60
         canvas_size = self.grid_size * cell_size
         canvas = tk.Canvas(root, width=canvas_size, height=canvas_size, bg=white)
         canvas.pack()
 
+        btn_frame = tk.Frame(root)
+        btn_frame.pack(fill=tk.X)
+        reset_btn = tk.Button(btn_frame, text="Reset (R)", font=("Arial", 12), bg=rose_red, fg=white)
+        reset_btn.pack(pady=4)
+
+        self._gui_done = False
+
         def draw_grid():
             canvas.delete("all")
-            # Draw grid lines and cells
             for i in range(self.grid_size):
                 for j in range(self.grid_size):
                     x1, y1 = i * cell_size, j * cell_size
                     x2, y2 = x1 + cell_size, y1 + cell_size
-                    
-                    # RHIT scheme: White cells, Rose Red outlines
                     canvas.create_rectangle(x1, y1, x2, y2, fill=white, outline=rose_red)
-                    
                     if (i, j) == self.goal_pos:
-                        # Draw Bonfire (Goal)
-                        # Logs
                         canvas.create_rectangle(x1 + 10, y2 - 15, x2 - 10, y2 - 5, fill=brown)
                         canvas.create_rectangle(x1 + 15, y2 - 25, x2 - 15, y2 - 15, fill=brown)
-                        # Flames (Polygon)
                         canvas.create_polygon(
-                            x1 + 15, y2 - 25,
-                            x1 + 30, y1 + 5,
-                            x2 - 15, y2 - 25,
+                            x1 + 15, y2 - 25, x1 + 30, y1 + 5, x2 - 15, y2 - 25,
                             fill=orange, outline=rose_red
                         )
                         canvas.create_text(x1 + cell_size/2, y2 - 5, text="BONFIRE", fill=rose_red, font=("Arial", 8, "bold"))
                     elif (i, j) in self.holes:
-                        # Draw Holes (Black)
                         canvas.create_oval(x1 + 5, y1 + 5, x2 - 5, y2 - 5, fill=black)
                         canvas.create_text(x1 + cell_size/2, y1 + cell_size/2, text="HOLE", fill="white", font=("Arial", 8, "bold"))
 
-            # Draw Agent (Elephant)
             ax, ay = self.agent_pos
             ax1, ay1 = ax * cell_size, ay * cell_size
-            
-            # Elephant body (Oval)
             canvas.create_oval(ax1 + 15, ay1 + 20, ax1 + 50, ay1 + 50, fill=gray, outline=black, tags="agent")
-            # Elephant head (Oval)
             canvas.create_oval(ax1 + 35, ay1 + 15, ax1 + 55, ay1 + 35, fill=gray, outline=black, tags="agent")
-            # Elephant trunk (Line/Polygon)
             canvas.create_line(ax1 + 50, ay1 + 30, ax1 + 60, ay1 + 45, width=4, fill=gray, tags="agent")
-            # Elephant ears (Oval)
             canvas.create_oval(ax1 + 30, ay1 + 10, ax1 + 45, ay1 + 30, fill=gray, outline=black, tags="agent")
-            # Eye
             canvas.create_oval(ax1 + 48, ay1 + 22, ax1 + 50, ay1 + 24, fill=black, tags="agent")
 
-        def handle_keypress(event):
+        def show_done_message(success):
+            msg = "Goal Reached!" if success else "Fell in a Hole!"
+            canvas.create_text(canvas_size/2, canvas_size/2, text=msg,
+                                font=("Arial", 22, "bold"), fill=rose_red)
+            canvas.create_text(canvas_size/2, canvas_size/2 + 36,
+                                text="Press R or click Reset to play again",
+                                font=("Arial", 13), fill=rose_red)
+
+        def do_reset():
+            self._gui_done = False
+            self.reset()
+            draw_grid()
             if q_table is not None:
-                return # Disable keyboard input if q_table is provided
-            
+                root.after(500, run_automated_step)
+
+        reset_btn.config(command=do_reset)
+
+        def handle_keypress(event):
+            if event.keysym in ('r', 'R'):
+                do_reset()
+                return
+            if q_table is not None:
+                return
             action = None
             if event.keysym == "Up": action = 0
             elif event.keysym == "Down": action = 1
             elif event.keysym == "Left": action = 2
             elif event.keysym == "Right": action = 3
-            elif event.keysym == "n": action = 4
-            
-            if action is not None:
+            if action is not None and not self._gui_done:
                 state, reward, done = self.step(action)
-                print(f"Action {self.action_space[action]}: State {state}, Reward {reward}, Done {done}")
                 draw_grid()
                 if done:
-                    print("Episode finished. Resetting...")
-                    self.reset()
-                    draw_grid()
+                    self._gui_done = True
+                    show_done_message(self.agent_pos == self.goal_pos)
 
         def run_automated_step():
-            if q_table is None:
+            if self._gui_done or q_table is None:
                 return
-            
-            # Select greedy action
             action = q_table[self.agent_pos[0], self.agent_pos[1]].argmax()
-            state, reward, done = self.step(action)
-            print(f"Agent took action {self.action_space[action]} -> State: {state}, Reward: {reward}")
+            _, reward, done = self.step(action)
             draw_grid()
-            
             if done:
-                print("Episode finished!")
-                # Optional: root.after(2000, root.destroy) # Close after 2 seconds
-                return
+                self._gui_done = True
+                show_done_message(self.agent_pos == self.goal_pos)
             else:
-                root.after(500, run_automated_step) # Next step in 500ms
+                root.after(500, run_automated_step)
 
+        root.bind("<Key>", handle_keypress)
+        self.reset()
         draw_grid()
         if q_table is not None:
-            self.reset() # Start from a random position
-            draw_grid()
-            print("Running greedy episode from Q-table...")
-            root.after(1000, run_automated_step) # Start after 1 second
-        else:
-            root.bind("<Key>", handle_keypress)
-            print("Control the agent with arrow keys (Up, Down, Left, Right). Press 'n' for None action.")
-        
+            root.after(1000, run_automated_step)
+
         root.mainloop()
 
 if __name__ == "__main__":
